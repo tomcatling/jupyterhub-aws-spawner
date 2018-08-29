@@ -27,11 +27,11 @@ Custom spawner for launching and organizing EC2 instances with jupyterhub, using
 
 ### Long term todo:
 
+- S3 bucket lookup and selection in options
+
 - Handling multiple volumes per user
 
-- Bucket lookup and selection in options
-
-- Attach Elastic GPU
+- Share volumes with other users
 
 
 
