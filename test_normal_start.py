@@ -28,12 +28,10 @@ dummyUser = DummyUser(name='developmentUser')
      
 try:
     server = Server.get_server(user_id=dummyUser.name)
-    assert server.user_id == dummyUser.name
 except:
     server = Server.new_server(server_id = '' , user_id = dummyUser.name , ebs_volume_id = '')
-    assert server.user_id == dummyUser.name
+assert server.user_id == dummyUser.name
     
-
 
 dummyUserOptions = {'EBS_VOL_ID' : '',
                     'EBS_VOL_SIZE' : 3,
@@ -55,13 +53,18 @@ instanceSpawner.set_debug_options(dummyUser = dummyUser, dummyUserOptions=dummyU
                                   dummyOAuthID = dummyOAuthID)
 
 #%%
+
+@gen.coroutine
+def terminate(instance):
+    ret = yield instance.terminate(delete_volume=True)
+    return ret
+
 @gen.coroutine
 def start(instance):
-    ret = yield instance.start()
-    return ret
-output = start(instanceSpawner)
-
-
+    ret_start = yield instance.start()
+    ret_term = yield terminate(instanceSpawner)
+    return ret_start, ret_term
+start_output = start(instanceSpawner)
 
 
 

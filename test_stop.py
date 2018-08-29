@@ -28,11 +28,9 @@ dummyUser = DummyUser(name='developmentUser')
      
 try:
     server = Server.get_server(user_id=dummyUser.name)
-    assert server.user_id == dummyUser.name
 except:
     server = Server.new_server(server_id = '' , user_id = dummyUser.name , ebs_volume_id = '')
-    assert server.user_id == dummyUser.name
-    
+assert server.user_id == dummyUser.name
 
 
 dummyUserOptions = {'EBS_VOL_ID' : '',
