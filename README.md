@@ -21,6 +21,8 @@ Custom spawner for launching and organizing EC2 instances with jupyterhub, using
 
 - Automatically mounting S3 buckets via s3fs and IAM
 
+- Make options form more shiny and userfriendly
+
 
 
 ### Long term todo:
