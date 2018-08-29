@@ -28,7 +28,6 @@ class BaseModel(Model):
     class Meta:
         database = DB
 
-
 class Server(BaseModel):
     server_id = CharField(unique=True)
     created_at = DateTimeField(default=datetime.datetime.now)

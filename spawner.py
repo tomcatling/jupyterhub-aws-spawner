@@ -195,7 +195,6 @@ class InstanceSpawner(Spawner):
                 yield self.start_worker_server(instance, new_server=False)
                 self.ip = self.user.server.ip = instance.private_ip_address
                 self.port = self.user.server.port = NOTEBOOK_SERVER_PORT
-#                return instance.private_ip_address, NOTEBOOK_SERVER_PORT
             elif instance.state["Name"] in ["stopped", "stopping", "pending", "shutting-down"]:
                 #For case that instance is stopped, the attributes are modified
                 if instance.state["Name"] == "stopped":
@@ -222,7 +221,6 @@ class InstanceSpawner(Spawner):
                 yield gen.sleep(10)
                 self.ip = self.user.server.ip = instance.private_ip_address
                 self.port = self.user.server.port = NOTEBOOK_SERVER_PORT
-#                return instance.private_ip_address, NOTEBOOK_SERVER_PORT
             elif instance.state["Name"] == "terminated":
                 # If the server is terminated ServerNotFound is raised. This leads to the try
                 self.log.debug('Instance terminated for user %s. Creating new one and try to attach old volume.' % self.user.name)
@@ -250,7 +248,7 @@ class InstanceSpawner(Spawner):
             yield gen.sleep(10)
             self.ip = self.user.server.ip
             self.port = self.user.server.port = NOTEBOOK_SERVER_PORT
-#            return instance.private_ip_address, NOTEBOOK_SERVER_PORT
+            
         
         ec2 = boto3.client("ec2", region_name=SERVER_PARAMS["REGION"])
         #update 

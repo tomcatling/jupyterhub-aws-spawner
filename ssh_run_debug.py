@@ -28,8 +28,6 @@ BASTION= bastion_info['bastion']
 KEYPATH = bastion_info['key_path']
 BASTIONUSER = bastion_info['user']
 
-
-
 def _run(cmd, sudo = False, *args, **kwargs):
     '''Executes a command on a host behind a gateway. Necessary for testing 
     in development when spawning instances in private prodiction subnet. '''
@@ -49,7 +47,6 @@ def _run(cmd, sudo = False, *args, **kwargs):
         
 def _sudo(cmd, *args, **kwargs):
     return _run(cmd, sudo = True)
-
 
 
 @gen.coroutine

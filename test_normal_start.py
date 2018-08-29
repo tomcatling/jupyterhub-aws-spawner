@@ -23,7 +23,6 @@ class DummyUser():
         self.url = ''
         self.settings = {}
     
-
 dummyUser = DummyUser(name='developmentUser')   
      
 try:

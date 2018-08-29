@@ -1,1 +1,6 @@
 .spyproject
+bastion_info.json
+db_creds.json
+server_config.json
+api_token.txt
+__pycache__
