@@ -64,9 +64,9 @@ Its strongly recommended to set up a AWS VPC configuration according to [cloudJh
   }
 ```
 
-Next create a `bastion_info.json` to ssh jump the server in the subnet. Use the key from the above configuration.
+Next create a `bastion_info.json` to ssh-jump to the server in the subnet. Use the key from the configuration above.
 
-Note: To make jump ssh work you should set `StrictHostKeyChecking no` on the bastion server for the worker subnet.
+Note: To make jumpssh work you should set `StrictHostKeyChecking no` on the bastion server for the worker subnet, otherwise the jumper will be stuck.
 ```json
 {
   "bastion" : "example.bastion.com",
@@ -75,7 +75,7 @@ Note: To make jump ssh work you should set `StrictHostKeyChecking no` on the bas
 }
 ```
 
-If want to use an external db you can create a `db_creds.json`. Every MySqlAlchemy supported DB should work but Postgres is recommended by Jupyterhub and this way you can use one DB for Jupyterhub and Spawner meta information. Otherwise sqlite can be used.
+If you want to use an external db you can create a `db_creds.json`. Every MySqlAlchemy supported DB should work but Postgres is recommended by Jupyterhub and this way you can use one DB for Jupyterhub and spawner meta information. Otherwise sqlite can be used.
 ```json
 {
   "database" : "dbname", 
