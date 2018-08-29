@@ -6,27 +6,28 @@ So far:
 
 -Scaling instance size via options form
 
--Keeping track of EBS volume even if instance is termianted
+-Keeping track of EBS volume even if instance is terminated
 
 -Attaching and mounting custom EBS volumes
 
 -Create and attach new volume from snapshot
 
--Attachment of IAM roles (via DB Admin)
+-Assignment of IAM roles (via DB entry)
 
 
 Todo:
 
--Mounting S3 buckets via s3fs and IAM
-
 -Hardening and testing (Data integrity first)
+
+-Automatically mounting S3 buckets via s3fs and IAM
+
 
 
 Long term todo:
 
--Handling multiple volumes 
+-Handling multiple volumes per user
 
--Bucket lookup and selection on start
+-Bucket lookup and selection in options
 
 -Attach Elastic GPU
 
