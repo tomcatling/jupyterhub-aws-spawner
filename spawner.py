@@ -14,9 +14,11 @@ from fabric.exceptions import NetworkError
 from paramiko.ssh_exception import SSHException, ChannelException
 from botocore.exceptions import ClientError, WaiterError
 from datetime import datetime
-from tornado import gen, web
+#from tornado import gen, web
+from time import sleep
 from jupyterhub.spawner import Spawner
-from concurrent.futures import ThreadPoolExecutor
+import asyncio
+#from concurrent.futures import ThreadPoolExecutor
 
 
 
@@ -64,7 +66,7 @@ WORKER_TAGS = [ #These tags are set on every server created by the spawner
     {"Key": "Jupyter Cluster", "Value": SERVER_PARAMS["JUPYTER_CLUSTER"]},
 ]
 
-thread_pool = ThreadPoolExecutor(100)
+#thread_pool = ThreadPoolExecutor(100)
 
 #Logging settings
 logger = logging.getLogger(__name__)
@@ -85,31 +87,26 @@ FABRIC_QUIET = True
 
 if os.environ.get('AWS_SPAWNER_TEST'):
     from ssh_run_debug import _run, _sudo
-    @gen.coroutine
-    def run(cmd, *args, **kwargs):
-       ret = yield retry(_run, cmd , sudo = False, *args, **kwargs)
+    async def run(cmd, *args, **kwargs):
+       ret = await retry(_run, cmd , sudo = False, *args, **kwargs)
        return ret
     
-    @gen.coroutine
-    def sudo(cmd, *args, **kwargs):
-        ret = yield retry(_sudo, cmd, *args, **kwargs)
+    async def sudo(cmd, *args, **kwargs):
+        ret = await retry(_sudo, cmd, *args, **kwargs)
         return ret
 else:
     from fabric.api import sudo as _sudo, run as _run
-    @gen.coroutine
-    def sudo(*args, **kwargs):
-        ret = yield retry(_sudo, *args, **kwargs, quiet=FABRIC_QUIET)
+    async def sudo(*args, **kwargs):
+        ret = await retry(_sudo, *args, **kwargs, quiet=FABRIC_QUIET)
         return ret
     
-    @gen.coroutine
-    def run(*args, **kwargs):
-        ret = yield retry(_run, *args, **kwargs, quiet=FABRIC_QUIET)
+    async def run(*args, **kwargs):
+        ret = await retry(_run, *args, **kwargs, quiet=FABRIC_QUIET)
         return ret
 
 
     
-@gen.coroutine
-def retry(function, *args, **kwargs):
+async def retry(function, *args, **kwargs):
     """ Retries a function up to max_retries, waiting `timeout` seconds between tries.
         This function is designed to retry both boto3 and fabric calls.  In the
         case of boto3, it is necessary because sometimes aws calls return too
@@ -119,16 +116,17 @@ def retry(function, *args, **kwargs):
     timeout = kwargs.pop("timeout", 1)            
     for attempt in range(max_retries):
         try:
-            ret = yield thread_pool.submit(function, *args, **kwargs)
+#            ret = thread_pool.submit(function, *args, **kwargs)
+            ret = function(*args, **kwargs)
             return ret
         except (ClientError, WaiterError, NetworkError, RemoteCmdExecutionError, EOFError, SSHException, ChannelException) as e:
             #EOFError can occur in fabric
             logger.error("Failure in %s with args %s and kwargs %s" % (function.__name__, args, kwargs))
             logger.info("retrying %s, (~%s seconds elapsed)" % (function.__name__, attempt * 3))
-            yield gen.sleep(timeout)
+            sleep(timeout)
     else:
         logger.error("Failure in %s with args %s and kwargs %s" % (function.__name__, args, kwargs))
-        yield gen.sleep(0.1) #this line exists to allow the logger time to print
+        sleep(0.1) #this line exists to allow the logger time to print
         return ("RETRY_FAILED")
 
 #########################################################################################################
@@ -138,7 +136,7 @@ class InstanceSpawner(Spawner):
     """ A Spawner that starts an EC2 instance for each user.
 
         Warnings:
-            - Because of db.commit() calls within Jupyterhub's code between yield calls in jupyterhub.user.spawn(),
+            - Because of db.commit() calls within Jupyterhub's code between await calls in jupyterhub.user.spawn(),
             setting an attribute on self.user.server results in ORM calls and incomplete jupyterhub.sqlite Server
             entries. Be careful of setting self.user.server attributes too early in this spawner.start().
 
@@ -150,7 +148,6 @@ class InstanceSpawner(Spawner):
             with your log statements, insert a brief sleep into the code where your are logging to allow time for log to
             flush.
         """
-    @gen.coroutine
     def set_debug_options(self, dummyUser = None, dummyUserOptions = None, 
                           dummyHubOptions= None, dummyServerOptions = None,
                           dummyApiToken = None, dummyOAuthID = None):
@@ -168,8 +165,7 @@ class InstanceSpawner(Spawner):
             self.oauth_client_id = dummyOAuthID
         
             
-    @gen.coroutine
-    def start(self):
+    async def start(self):
         
         """ When user logs in, start their instance.
             Must return a tuple of the ip and port for the server and Jupyterhub instance. """
@@ -178,21 +174,21 @@ class InstanceSpawner(Spawner):
         self.log.debug("function start for user %s" % self.user.name)
         self.user.last_activity = datetime.utcnow()
         try:
-            instance = self.instance = yield self.get_instance() #cannot be a thread pool...
+            instance = self.instance = await self.get_instance() #cannot be a thread pool...
             os.environ['AWS_SPAWNER_WORKER_IP'] = instance.private_ip_address if type(instance.private_ip_address) == str else "NO IP"
             #comprehensive list of states: pending, running, shutting-down, terminated, stopping, stopped.
             if instance.state["Name"] == "running":
-                ec2_run_status = yield self.check_for_hanged_ec2(instance)
+                ec2_run_status = await self.check_for_hanged_ec2(instance)
                 if ec2_run_status == "SSH_CONNECTION_FAILED":
-                    #yield self.poll()
-                    #yield self.kill_instance(instance)
-                    #yield retry(instance.start, max_retries=(LONG_RETRY_COUNT*2))
-                    #yield retry(instance.wait_until_running, max_retries=(LONG_RETRY_COUNT*2)) #this call can occasionally fail, so we wrap it in a retry.
+                    #await self.poll()
+                    #await self.kill_instance(instance)
+                    #await retry(instance.start, max_retries=(LONG_RETRY_COUNT*2))
+                    #await retry(instance.wait_until_running, max_retries=(LONG_RETRY_COUNT*2)) #this call can occasionally fail, so we wrap it in a retry.
                     #return instance.private_ip_address, NOTEBOOK_SERVER_PORT
                     return None
                 #start_worker_server will handle starting notebook
                 logger.info("start ip and port: %s , %s" % (instance.private_ip_address, NOTEBOOK_SERVER_PORT))
-                yield self.start_worker_server(instance, new_server=False)
+                await self.start_worker_server(instance, new_server=False)
                 self.ip = self.user.server.ip = instance.private_ip_address
                 self.port = self.user.server.port = NOTEBOOK_SERVER_PORT
             elif instance.state["Name"] in ["stopped", "stopping", "pending", "shutting-down"]:
@@ -201,7 +197,7 @@ class InstanceSpawner(Spawner):
                     self.log.debug('Selected instance type for user %s: '  % self.user.name)
                     if self.user_options['INSTANCE_TYPE'] in AWS_INSTANCE_TYPES:
                         try:
-                            yield retry(instance.modify_attribute, Attribute='instanceType', Value = self.user_options['INSTANCE_TYPE'])
+                            await retry(instance.modify_attribute, Attribute='instanceType', Value = self.user_options['INSTANCE_TYPE'])
                         except:
                             self.log.debug("Instance type for user %s could not be changed." % self.user.name)
                     else:
@@ -209,16 +205,16 @@ class InstanceSpawner(Spawner):
                     
                 #Server needs to be booted, do so.
                 self.log.info("Starting user %s instance " % self.user.name)
-                yield retry(instance.start, max_retries=LONG_RETRY_COUNT)
-                #yield retry(instance.start)
+                await retry(instance.start, max_retries=LONG_RETRY_COUNT)
+                #await retry(instance.start)
                 # blocking calls should be wrapped in a Future
-                yield retry(instance.wait_until_running) #this call can occasionally fail, so we wrap it in a retry.
+                await retry(instance.wait_until_running) #this call can occasionally fail, so we wrap it in a retry.
                 self.aws_instance = os.environ['AWS_SPAWNER_WORKER_IP'] = instance.private_ip_address
-                yield self.start_worker_server(instance, new_server=False)
+                await self.start_worker_server(instance, new_server=False)
                 self.log.debug("%s , %s" % (instance.private_ip_address, NOTEBOOK_SERVER_PORT))
                 # a longer sleep duration reduces the chance of a 503 or infinite redirect error (which a user can
                 # resolve with a page refresh). 10s seems to be a good inflection point of behavior
-                yield gen.sleep(10)
+                await sleep(10)
                 self.ip = self.user.server.ip = instance.private_ip_address
                 self.port = self.user.server.port = NOTEBOOK_SERVER_PORT
             elif instance.state["Name"] == "terminated":
@@ -232,20 +228,20 @@ class InstanceSpawner(Spawner):
             self.log.debug('Server not found raised for %s' % self.user.name)
 
             try:
-                self.user.volume = yield self.get_volume() #cannot be a thread pool...
+                self.user.volume = await self.get_volume() #cannot be a thread pool...
             except (VolumeNotFound, Server.DoesNotExist) as e:
                 self.user.volume = None
                 self.log.debug('Volume not found raised for %s' % self.user.name)
 
                         
             self.log.info("\nCreate new server for user %s with volume %s\n" % (self.user.name, self.user.volume))
-            instance = self.instance =  yield self.create_new_instance()
+            instance = self.instance =  await self.create_new_instance()
             os.environ['AWS_SPAWNER_WORKER_IP'] = instance.private_ip_address
-            yield self.start_worker_server(instance, new_server=True)
+            await self.start_worker_server(instance, new_server=True)
             # self.notebook_should_be_running = False
             self.log.debug("%s , %s" % (instance.private_ip_address, NOTEBOOK_SERVER_PORT))
             # to reduce chance of 503 or infinite redirect
-            yield gen.sleep(10)
+            await sleep(10)
             self.ip = self.user.server.ip
             self.port = self.user.server.port = NOTEBOOK_SERVER_PORT
             
@@ -254,7 +250,7 @@ class InstanceSpawner(Spawner):
         #update 
         # assign iam role to server
         role = Role.get_role(self.user.name)
-        yield retry(ec2.associate_iam_instance_profile, 
+        await retry(ec2.associate_iam_instance_profile, 
                     IamInstanceProfile={'Arn': role.role_arn , 'Name': role.role_name}, InstanceId=self.instance.instance_id)
         return instance.private_ip_address, NOTEBOOK_SERVER_PORT
         
@@ -263,14 +259,13 @@ class InstanceSpawner(Spawner):
         """Clear stored state about this spawner """
         super(InstanceSpawner, self).clear_state()
 
-    @gen.coroutine
-    def stop(self, now=False):
+    async def stop(self, now=False):
         """ When user session stops, stop user instance """
         self.log.debug("function stop")
         self.log.info("Stopping user %s instance " % self.user.name)
         try:
-            instance = yield self.get_instance()  
-            yield retry(instance.stop)
+            instance = await self.get_instance()  
+            await retry(instance.stop)
             return 'Notebook stopped'
             # self.notebook_should_be_running = False
         except Server.DoesNotExist:
@@ -278,18 +273,17 @@ class InstanceSpawner(Spawner):
             # self.notebook_should_be_running = False
         self.clear_state()
 
-    @gen.coroutine
-    def terminate(self, now=False, delete_volume=False):
+    async def terminate(self, now=False, delete_volume=False):
         """ Terminate instance for debugging purposes """
         self.log.debug("function terminate")
         self.log.info("Terminating user %s instance " % self.user.name)
         try:
-            instance = yield self.get_instance()  
-            yield retry(instance.terminate)
+            instance = await self.get_instance()  
+            await retry(instance.terminate)
             if delete_volume:
                 server = Server.get_server(self.user.name)  
                 ec2 = boto3.client("ec2", region_name=SERVER_PARAMS["REGION"])
-                yield retry(ec2.delete_volume, VolumeId = server.ebs_volume_id, max_retries=40)
+                await retry(ec2.delete_volume, VolumeId = server.ebs_volume_id, max_retries=40)
             return 'Terminated'
             # self.notebook_should_be_running = False
         except Server.DoesNotExist:
@@ -297,15 +291,13 @@ class InstanceSpawner(Spawner):
             # self.notebook_should_be_running = False
         self.clear_state()
         
-    @gen.coroutine
-    def kill_instance(self,instance):
+    async def kill_instance(self,instance):
         self.log.debug(" Kill hanged user %s instance:  %s " % (self.user.name,instance.id))
-        yield self.stop(now=True)
+        await self.stop(now=True)
         
 
     # Check if the machine is hanged
-    @gen.coroutine
-    def check_for_hanged_ec2(self, instance):
+    async def check_for_hanged_ec2(self, instance):
         timerightnow    = datetime.utcnow().replace(tzinfo=None)
         ec2launchtime   = instance.launch_time.replace(tzinfo=None)
         ec2uptimeSecond = (timerightnow - ec2launchtime).seconds
@@ -313,17 +305,16 @@ class InstanceSpawner(Spawner):
         conn_health = ""
         if ec2uptimeSecond > 180:
             # wait_until_SSHable return : 1) "some object" if SSH is established;  2) "SSH_CONNECTION_FAILED" otherwise
-            conn_health  = yield self.wait_until_SSHable(instance.private_ip_address,max_retries=5)
+            conn_health  = await self.wait_until_SSHable(instance.private_ip_address,max_retries=5)
         return(conn_health)
 
 
-    @gen.coroutine
-    def poll(self):
+    async def poll(self):
         """ Polls for whether process is running. If running, return None. If not running,
             return exit code """
         self.log.debug("function poll for user %s" % self.user.name)
         try:
-            instance = yield self.get_instance()
+            instance = await self.get_instance()
             self.log.debug(instance.state)
             if instance.state['Name'] == 'running':
                 self.log.debug("poll: server is running for user %s" % self.user.name)
@@ -331,13 +322,13 @@ class InstanceSpawner(Spawner):
                 # If this has a long timeout, logging in without notebook running takes a long time.
                 # attempts = 30 if self.notebook_should_be_running else 1
                 # check if the machine is hanged 
-                ec2_run_status = yield self.check_for_hanged_ec2(instance)
+                ec2_run_status = await self.check_for_hanged_ec2(instance)
                 if ec2_run_status == "SSH_CONNECTION_FAILED":
                     #self.log.debug(ec2_run_status)
-                    yield self.kill_instance(instance)
+                    await self.kill_instance(instance)
                     return "Instance Hang"
                 else:
-                    notebook_running = yield self.is_notebook_running(instance.private_ip_address, attempts=1)
+                    notebook_running = await self.is_notebook_running(instance.private_ip_address, attempts=1)
                     if notebook_running:
                         self.log.debug("poll: notebook is running for user %s" % self.user.name)
                         return None #its up!
@@ -355,15 +346,14 @@ class InstanceSpawner(Spawner):
     ################################################################################################################
     ### helpers ###
 
-    @gen.coroutine
-    def is_notebook_running(self, ip_address_string, attempts=1):
+    async def is_notebook_running(self, ip_address_string, attempts=1):
         """ Checks if jupyterhub/notebook is running on the target machine, returns True if Yes, False if not.
             If an attempts count N is provided the check will be run N times or until the notebook is running, whichever
             comes first. """
         with settings(**FABRIC_DEFAULTS, host_string=ip_address_string):
             for i in range(attempts):
                 self.log.info("function check_notebook_running for user %s, attempt %s..." % (self.user.name, i+1))
-                output = yield run("ps -ef | grep jupyterhub-singleuser")
+                output = await run("ps -ef | grep jupyterhub-singleuser")
                 for line in output.splitlines(): #
                     #if "jupyterhub-singleuser" and NOTEBOOK_SERVER_PORT in line:
                     # TODO: Check for notebook command from jhub config 
@@ -372,36 +362,34 @@ class InstanceSpawner(Spawner):
                         self.log.info(line)
                         return True
                 self.log.info("Notebook for user %s not running..." % self.user.name)
-                yield gen.sleep(1)
+                await asyncio.sleep(1)
             self.log.error("Notebook for user %s is not running." % self.user.name)
             return False
 
 
     ###  Retun SSH_CONNECTION_FAILED if ssh connection failed
-    @gen.coroutine
-    def wait_until_SSHable(self, ip_address_string, max_retries=1):
+    async def wait_until_SSHable(self, ip_address_string, max_retries=1):
         """ Run a meaningless bash command (a comment) inside a retry statement. """
         self.log.debug("function wait_until_SSHable for user %s" % self.user.name)
         with settings(**FABRIC_DEFAULTS, host_string=ip_address_string):
-            ret = yield run("# waiting for ssh to be connectable for user %s with ip %s and fabric settings %s..." % (self.user.name, ip_address_string, FABRIC_DEFAULTS), max_retries=max_retries)
+            ret = await run("# waiting for ssh to be connectable for user %s with ip %s and fabric settings %s..." % (self.user.name, ip_address_string, FABRIC_DEFAULTS), max_retries=max_retries)
         if ret == "RETRY_FAILED":
            ret = "SSH_CONNECTION_FAILED"
         return (ret)
 
 
 
-    @gen.coroutine
-    def get_instance(self):
+    async def get_instance(self):
         """ This returns a boto Instance resource; if boto can't find the instance or if no entry for instance in database,
             it raises ServerNotFound error and removes database entry if appropriate """
         logger.info("function get_instance for user %s" % self.user.name)
         server = Server.get_server(self.user.name)
-        resource = yield retry(boto3.resource, "ec2", region_name=SERVER_PARAMS["REGION"])
+        resource = await retry(boto3.resource, "ec2", region_name=SERVER_PARAMS["REGION"])
         try:
-            ret = yield retry(resource.Instance, server.server_id)
+            ret = await retry(resource.Instance, server.server_id)
             logger.info("return for get_instance for user %s: %s" % (self.user.name, ret))
             # boto3.Instance is lazily loaded. Force with .load()
-            yield retry(ret.load)
+            await retry(ret.load)
             if ret.meta.data is None:
                 raise ServerNotFound
             return ret
@@ -413,19 +401,18 @@ class InstanceSpawner(Spawner):
                 raise ServerNotFound
             raise e
             
-    @gen.coroutine
-    def get_volume(self):
+    async def get_volume(self):
         """ This returns a boto volume resource for the case no volumewas found. 
         If boto can't find the volume or if no entry for instance in database,
             it raises VolumeNotFound error and removes database entry if appropriate """
         self.log.debug("function get_resource for user %s" % self.user.name)
         server = Server.get_server(self.user.name)
-        resource = yield retry(boto3.resource, "ec2", region_name=SERVER_PARAMS["REGION"])
+        resource = await retry(boto3.resource, "ec2", region_name=SERVER_PARAMS["REGION"])
         try:
-            ret = yield retry(resource.Volume, server.ebs_volume_id)
+            ret = await retry(resource.Volume, server.ebs_volume_id)
             self.log.debug("return for get_volume for user %s: %s" % (self.user.name, ret))
             # boto3.Volume is lazily loaded. Force with .load()
-            yield retry(ret.load)
+            await retry(ret.load)
             if ret.meta.data is None:
                 Server.remove_server(server.server_id)
                 self.log.info("\nVolume DNE for user %s\n" % self.user.name)
@@ -441,8 +428,7 @@ class InstanceSpawner(Spawner):
             
         
     
-    @gen.coroutine
-    def start_worker_server(self, instance, new_server=False):
+    async def start_worker_server(self, instance, new_server=False):
         """ Runs remote commands on worker server to mount user EBS and connect to Jupyterhub. If new_server=True,
             also create filesystem on newly created user EBS"""
         logger.info("function start_worker_server for user %s" % self.user.name)
@@ -452,21 +438,20 @@ class InstanceSpawner(Spawner):
         # self.user.server.port = NOTEBOOK_SERVER_PORT
         try:
             # Wait for server to finish booting...
-            wait_result = yield self.wait_until_SSHable(instance.private_ip_address,max_retries=LONG_RETRY_COUNT)
+            wait_result = await self.wait_until_SSHable(instance.private_ip_address,max_retries=LONG_RETRY_COUNT)
             # If first time server then setup the user name
             if new_server:
-                yield self.setup_user(instance.private_ip_address)
+                await self.setup_user(instance.private_ip_address)
             #start notebook
             self.log.error("\n\n\n\nabout to check if notebook is running before launching\n\n\n\n")
-            notebook_running = yield self.is_notebook_running(instance.private_ip_address)
+            notebook_running = await self.is_notebook_running(instance.private_ip_address)
             if not notebook_running:
-                yield self.remote_notebook_start(instance)
+                await self.remote_notebook_start(instance)
         except RemoteCmdExecutionError:
             # terminate instance and create a new one
             raise web.HTTPError(500, "Instance unreachable")
 
-    @gen.coroutine
-    def setup_user(self, privat_ip):
+    async def setup_user(self, privat_ip):
         """ setup_user_home  and prepare s3"""
 
         if self.user.name == WORKER_USERNAME:
@@ -474,20 +459,20 @@ class InstanceSpawner(Spawner):
         else:
             if SERVER_PARAMS["USER_HOME_EBS_SIZE"] > 0:
                 with settings(**FABRIC_DEFAULTS, host_string=privat_ip):
-                    yield sudo("mkfs.xfs /dev/%s" %("xvdf") , user="root",  pty=False)
-                    yield sudo("mkdir /jupyteruser", user="root",  pty=False)
-                    yield sudo("echo /dev/%s /jupyteruser xfs defaults 1 1 >> /etc/fstab" %("xvdf") , user="root",  pty=False)
-                    yield sudo("mount -a" , user="root",  pty=False)
+                    await sudo("mkfs.xfs /dev/%s" %("xvdf") , user="root",  pty=False)
+                    await sudo("mkdir /jupyteruser", user="root",  pty=False)
+                    await sudo("echo /dev/%s /jupyteruser xfs defaults 1 1 >> /etc/fstab" %("xvdf") , user="root",  pty=False)
+                    await sudo("mount -a" , user="root",  pty=False)
             with settings(**FABRIC_DEFAULTS, host_string=privat_ip):
-                yield sudo("mkdir -p /jupyteruser" , user="root",  pty=False)
-                yield sudo("useradd -d /home/%s %s -s /bin/bash  &>/dev/null" % (self.user.name,self.user.name) , user="root",  pty=False)
-                yield sudo("cp -R /home/%s /jupyteruser/%s" % (WORKER_USERNAME,self.user.name), user="root",  pty=False)
-                yield sudo("ln -s /jupyteruser/%s /home/%s" % (self.user.name,self.user.name), user="root",  pty=False)
-                yield sudo("chown -R %s /home/%s /jupyteruser/%s" %(self.user.name,self.user.name,self.user.name), user="root",  pty=False)
-#                yield sudo("chown -R %s.%s /home/%s /jupyteruser/%s" %(self.user.name,self.user.name,self.user.name,self.user.name), user="root",  pty=False)
-                yield sudo("echo \" %s ALL=(ALL) NOPASSWD:ALL \" > /etc/sudoers.d/%s " % (self.user.name,self.user.name), user="root",  pty=False)
+                await sudo("mkdir -p /jupyteruser" , user="root",  pty=False)
+                await sudo("useradd -d /home/%s %s -s /bin/bash  &>/dev/null" % (self.user.name,self.user.name) , user="root",  pty=False)
+                await sudo("cp -R /home/%s /jupyteruser/%s" % (WORKER_USERNAME,self.user.name), user="root",  pty=False)
+                await sudo("ln -s /jupyteruser/%s /home/%s" % (self.user.name,self.user.name), user="root",  pty=False)
+                await sudo("chown -R %s /home/%s /jupyteruser/%s" %(self.user.name,self.user.name,self.user.name), user="root",  pty=False)
+#                await sudo("chown -R %s.%s /home/%s /jupyteruser/%s" %(self.user.name,self.user.name,self.user.name,self.user.name), user="root",  pty=False)
+                await sudo("echo \" %s ALL=(ALL) NOPASSWD:ALL \" > /etc/sudoers.d/%s " % (self.user.name,self.user.name), user="root",  pty=False)
                 # uncomment the line below to setup a default password for the user.
-                #yield sudo('echo -e "%s\n%s" | passwd %s' % (self.user.name,self.user.name,self.user.name), pty=False)
+                #await sudo('echo -e "%s\n%s" | passwd %s' % (self.user.name,self.user.name,self.user.name), pty=False)
 
         return True
 
@@ -507,8 +492,7 @@ class InstanceSpawner(Spawner):
         return env
 
     
-    @gen.coroutine
-    def remote_notebook_start(self, instance):
+    async def remote_notebook_start(self, instance):
         """ Do notebook start command on the remote server."""
         # Setup environments
         env = self.get_env()
@@ -522,7 +506,7 @@ class InstanceSpawner(Spawner):
         start_notebook_cmd = " ".join(start_notebook_cmd)
         self.log.info("Starting user %s jupyterhub" % self.user.name)
         with settings(user = self.user.name, key_filename = FABRIC_DEFAULTS["key_filename"],  host_string=worker_ip_address_string):
-             yield sudo("%s %s --user=%s --notebook-dir=/ --allow-root > /tmp/jupyter.log 2>&1 &" % (lenv, start_notebook_cmd,self.user.name),  pty=False)
+             await sudo("%s %s --user=%s --notebook-dir=/ --allow-root > /tmp/jupyter.log 2>&1 &" % (lenv, start_notebook_cmd,self.user.name),  pty=False)
             
         self.log.debug("Just started the notebook for user %s with following command, waiting." % self.user.name)
         self.log.debug("%s %s --user=%s --notebook-dir=/ --allow-root > /tmp/jupyter.log 2>&1 &" % (lenv, start_notebook_cmd,self.user.name))
@@ -531,10 +515,9 @@ class InstanceSpawner(Spawner):
         except:
             self.user.settings[self.user.name] = ""
         # self.notebook_should_be_running = True
-        yield self.is_notebook_running(worker_ip_address_string, attempts=30)
+        await self.is_notebook_running(worker_ip_address_string, attempts=30)
         
-    @gen.coroutine
-    def create_new_instance(self):
+    async def create_new_instance(self):
         """ Creates and boots a new server to host the worker instance."""
         self.log.debug("function create_new_instance %s" % self.user.name)
         ec2 = boto3.client("ec2", region_name=SERVER_PARAMS["REGION"])
@@ -549,9 +532,9 @@ class InstanceSpawner(Spawner):
                      }
         BDM = [boot_drive]  
         # get user volume
-        volume_id = yield self.select_volume()
+        volume_id = await self.select_volume()
         # create new instance
-        reservation = yield retry(
+        reservation = await retry(
                 ec2.run_instances,
                 ImageId=SERVER_PARAMS["WORKER_AMI"],
                 MinCount=1,
@@ -568,31 +551,30 @@ class InstanceSpawner(Spawner):
         except TypeError as e:
             raise Exception('AWS sends weirdly formatted JSON. Please try again...')
             
-        instance = yield retry(resource.Instance, instance_id)
+        instance = await retry(resource.Instance, instance_id)
         #if an old volume is restored from a terminated instance, the user has to be updated, e.g. delted and newly saved
         # TODO: Support multiple volumes
         if self.user.volume:
             server = Server.get_server(self.user.name)
             Server.remove_server(server.server_id)
         Server.new_server(instance_id, self.user.name, volume_id)
-        yield retry(instance.wait_until_exists)
+        await retry(instance.wait_until_exists)
         # add server tags; tags cannot be added until server exists
-        yield retry(instance.create_tags, Tags=WORKER_TAGS)
-        yield retry(instance.create_tags, Tags=[{"Key": "User", "Value": self.user.name}])
-        yield retry(instance.create_tags, Tags=[{"Key": "Name", "Value": SERVER_PARAMS["WORKER_SERVER_NAME"] + '_' + self.user.name}])
+        await retry(instance.create_tags, Tags=WORKER_TAGS)
+        await retry(instance.create_tags, Tags=[{"Key": "User", "Value": self.user.name}])
+        await retry(instance.create_tags, Tags=[{"Key": "Name", "Value": SERVER_PARAMS["WORKER_SERVER_NAME"] + '_' + self.user.name}])
 
         # start server
         # blocking calls should be wrapped in a Future
-        yield retry(instance.wait_until_running)
+        await retry(instance.wait_until_running)
         # Attach persistent EBS
-        yield retry(instance.attach_volume, 
+        await retry(instance.attach_volume, 
                     Device='/dev/sdf', 
                     VolumeId = volume_id, 
                     InstanceId = instance_id)
         return instance
     
-    @gen.coroutine
-    def select_volume(self):
+    async def select_volume(self):
         '''Handles volume selection'''
         ec2_vol = boto3.client("ec2", region_name=SERVER_PARAMS["REGION"])
         resource_vol = boto3.resource("ec2", region_name=SERVER_PARAMS["REGION"])
@@ -603,18 +585,18 @@ class InstanceSpawner(Spawner):
         elif self.user_options['EBS_VOL_ID']:
             volume_id = self.user_options['EBS_VOL_ID']
         elif self.user_options['EBS_VOL_SIZE'] > 0:
-            volume = yield retry(ec2_vol.create_volume, AvailabilityZone = SERVER_PARAMS["REGION"]+'b', 
+            volume = await retry(ec2_vol.create_volume, AvailabilityZone = SERVER_PARAMS["REGION"]+'b', 
                                        Size = self.user_options['EBS_VOL_SIZE'], 
                                        VolumeType = 'gp2')
             volume_id = volume['VolumeId']
-            yield retry(resource_vol.create_tags, Resources=[volume_id], Tags=[{"Key": "Name", "Value": 'jhub_worker_volume_' + self.user.name}])
+            await retry(resource_vol.create_tags, Resources=[volume_id], Tags=[{"Key": "Name", "Value": 'jhub_worker_volume_' + self.user.name}])
         elif self.user_options['EBS_SNAP_ID']:
-            volume = yield retry(ec2_vol.create_volume, AvailabilityZone = SERVER_PARAMS["REGION"]+'b', 
+            volume = await retry(ec2_vol.create_volume, AvailabilityZone = SERVER_PARAMS["REGION"]+'b', 
                                        Size = self.user_options['EBS_VOL_SIZE'], 
                                        SnapshotId=self.user_options['EBS_SNAP_ID'],
                                        VolumeType = 'gp2')
             volume_id = volume['VolumeId']
-            yield retry(resource_vol.create_tags, Resources=[volume_id], Tags=[{"Key": "Name", "Value": 'jhub_worker_volume_' + self.user.name}])
+            await retry(resource_vol.create_tags, Resources=[volume_id], Tags=[{"Key": "Name", "Value": 'jhub_worker_volume_' + self.user.name}])
         else:
             raise Exception('No EBS volume-id or volume size provided.')
         
