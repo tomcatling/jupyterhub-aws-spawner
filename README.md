@@ -33,6 +33,10 @@ Custom spawner for launching and organizing EC2 instances with jupyterhub, using
 
 - Share volumes with other users
 
+- Multiple instances per User
+
+- Decouple from AWS -> jupyterhub-cloud-spawner
+
 
 
 
