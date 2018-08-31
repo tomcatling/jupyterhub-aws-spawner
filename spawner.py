@@ -14,8 +14,7 @@ from fabric.exceptions import NetworkError
 from paramiko.ssh_exception import SSHException, ChannelException
 from botocore.exceptions import ClientError, WaiterError
 from datetime import datetime
-#from tornado import gen, web
-from time import sleep
+from tornado import web
 from jupyterhub.spawner import Spawner
 import asyncio
 #from concurrent.futures import ThreadPoolExecutor
@@ -123,10 +122,10 @@ async def retry(function, *args, **kwargs):
             #EOFError can occur in fabric
             logger.error("Failure in %s with args %s and kwargs %s" % (function.__name__, args, kwargs))
             logger.info("retrying %s, (~%s seconds elapsed)" % (function.__name__, attempt * 3))
-            sleep(timeout)
+            asyncio.sleep(timeout)
     else:
         logger.error("Failure in %s with args %s and kwargs %s" % (function.__name__, args, kwargs))
-        sleep(0.1) #this line exists to allow the logger time to print
+        asyncio.sleep(0.1) #this line exists to allow the logger time to print
         return ("RETRY_FAILED")
 
 #########################################################################################################
@@ -194,7 +193,7 @@ class InstanceSpawner(Spawner):
             elif instance.state["Name"] in ["stopped", "stopping", "pending", "shutting-down"]:
                 #For case that instance is stopped, the attributes are modified
                 if instance.state["Name"] == "stopped":
-                    self.log.debug('Selected instance type for user %s: '  % self.user.name)
+                    self.log.debug('Selected instance type %s for user %s' % (str(self.user_options['INSTANCE_TYPE']), self.user.name))
                     if self.user_options['INSTANCE_TYPE'] in AWS_INSTANCE_TYPES:
                         try:
                             await retry(instance.modify_attribute, Attribute='instanceType', Value = self.user_options['INSTANCE_TYPE'])
@@ -214,7 +213,7 @@ class InstanceSpawner(Spawner):
                 self.log.debug("%s , %s" % (instance.private_ip_address, NOTEBOOK_SERVER_PORT))
                 # a longer sleep duration reduces the chance of a 503 or infinite redirect error (which a user can
                 # resolve with a page refresh). 10s seems to be a good inflection point of behavior
-                await sleep(10)
+                await asyncio.sleep(10)
                 self.ip = self.user.server.ip = instance.private_ip_address
                 self.port = self.user.server.port = NOTEBOOK_SERVER_PORT
             elif instance.state["Name"] == "terminated":
@@ -241,7 +240,7 @@ class InstanceSpawner(Spawner):
             # self.notebook_should_be_running = False
             self.log.debug("%s , %s" % (instance.private_ip_address, NOTEBOOK_SERVER_PORT))
             # to reduce chance of 503 or infinite redirect
-            await sleep(10)
+            await asyncio.sleep(10)
             self.ip = self.user.server.ip
             self.port = self.user.server.port = NOTEBOOK_SERVER_PORT
             
