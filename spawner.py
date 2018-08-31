@@ -249,8 +249,13 @@ class InstanceSpawner(Spawner):
         #update 
         # assign iam role to server
         role = Role.get_role(self.user.name)
-        await retry(ec2.associate_iam_instance_profile, 
-                    IamInstanceProfile={'Arn': role.role_arn , 'Name': role.role_name}, InstanceId=self.instance.instance_id)
+        self.log.debug('Trying to attach role %s to instance %s for user %s'
+                       % (role.role_arn, self.instance.instance_id ,self.user.name))
+        response = await retry(ec2.associate_iam_instance_profile, 
+                    IamInstanceProfile={'Arn': role.role_arn , 'Name': role.role_name}, 
+                    InstanceId=self.instance.instance_id)
+        self.log.debug('AWS response for tried rolle attachment for user %s: %s' 
+                       % (self.user.name, response))
         return instance.private_ip_address, NOTEBOOK_SERVER_PORT
         
         
