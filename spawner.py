@@ -253,7 +253,8 @@ class InstanceSpawner(Spawner):
                        % (role.role_arn, self.instance.instance_id ,self.user.name))
         response = await retry(ec2.associate_iam_instance_profile, 
                     IamInstanceProfile={'Arn': role.role_arn , 'Name': role.role_name}, 
-                    InstanceId=self.instance.instance_id)
+                    InstanceId=self.instance.instance_id,
+                    max_retries=10)
         self.log.debug('AWS response for tried rolle attachment for user %s: %s' 
                        % (self.user.name, response))
         return instance.private_ip_address, NOTEBOOK_SERVER_PORT
@@ -479,7 +480,7 @@ class InstanceSpawner(Spawner):
                 #await sudo('echo -e "%s\n%s" | passwd %s' % (self.user.name,self.user.name,self.user.name), pty=False)
 
         return True
-
+#"echo jupyterhub-bucket:/freelancer/%s /jupyteruser/s3 fuse.s3fs _netdev,iam_role=auto,use_cache=/tmp 0 0 >> /etc/fstab"
     def user_env(self, env): 
         """Augment environment of spawned process with user specific env variables.""" 
         import pwd 
