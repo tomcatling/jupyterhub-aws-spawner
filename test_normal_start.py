@@ -10,7 +10,7 @@ from types import SimpleNamespace
 os.environ['AWS_SPAWNER_TEST'] = '1'
 import spawner
 from models import Server
-from tornado import gen
+import asyncio
 
 #%% Configure
 class DummyUser():
@@ -53,17 +53,19 @@ instanceSpawner.set_debug_options(dummyUser = dummyUser, dummyUserOptions=dummyU
 
 #%%
 
-@gen.coroutine
-def terminate(instance):
-    ret = yield instance.terminate(delete_volume=True)
+
+async def terminate(instance):
+    ret = await instance.terminate(delete_volume=True)
     return ret
 
-@gen.coroutine
-def start(instance):
-    ret_start = yield instance.start()
-    ret_term = yield terminate(instanceSpawner)
+async def start(instance):
+    ret_start = await instance.start()
+    ret_term = await terminate(instanceSpawner)
     return ret_start, ret_term
-start_output = start(instanceSpawner)
+
+loop = asyncio.get_event_loop()
+start_output = loop.run_until_complete(start(instanceSpawner))
+
 
 
 
