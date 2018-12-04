@@ -1,3 +1,5 @@
+## Deprecated due to use of kubespawner and Jupyterhub on Kubernetes
+
 # jupyterhub-aws-spawner
 Custom spawner for launching and organizing EC2 instances with jupyterhub, using boto3 and tornado.
 
