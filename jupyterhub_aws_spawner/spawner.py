@@ -25,7 +25,6 @@ from jupyterhub_aws_spawner.models import Server, Role
 from jupyterhub_aws_spawner.aws_ressources import AWS_INSTANCE_TYPES
 
 
-
 def get_local_ip_address():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("8.8.8.8", 80))
@@ -637,6 +636,8 @@ class InstanceSpawner(Spawner):
 #         <label for="env">Environment variables (one per line)</label>
 #         <textarea name="env">{env}</textarea>
 #         """.format(env=default_env)
-        return open('options_form.html','r').read()
+        dirname = os.path.dirname(__file__)
+        filename = os.path.join(dirname, 'options_form.html')
+        return open(filename,'r').read()
 
     
