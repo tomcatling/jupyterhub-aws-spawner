@@ -21,8 +21,8 @@ import asyncio
 
 
 
-from models import Server, Role
-from aws_ressources import AWS_INSTANCE_TYPES
+from jupyterhub_aws_spawner.models import Server, Role
+from jupyterhub_aws_spawner.aws_ressources import AWS_INSTANCE_TYPES
 
 
 
