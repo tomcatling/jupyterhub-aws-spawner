@@ -8,9 +8,9 @@ import logging
 import socket
 import boto3
 import os
-from fabric3.api import env, sudo as _sudo, run as _run
-from fabric3.context_managers import settings
-from fabric3.exceptions import NetworkError
+from fabric.api import env, sudo as _sudo, run as _run
+from fabric.context_managers import settings
+from fabric.exceptions import NetworkError
 from paramiko.ssh_exception import SSHException, ChannelException
 from botocore.exceptions import ClientError, WaiterError
 from datetime import datetime
