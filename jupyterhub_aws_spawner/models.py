@@ -9,7 +9,7 @@ from playhouse.sqlite_ext import SqliteExtDatabase
 import json
 
 # To use SQLite Database
-#DB = SqliteExtDatabase('/etc/jupyterhub/server_tracking.sqlite3')
+DB = SqliteExtDatabase('/etc/jupyterhub/server_tracking.sqlite3')
 
 # To use MySQL DB
 # DB = MySQLDatabase(DB_NAME, host = DB_HOST , user=DB_USERNAME, passwd=DB_USERPASSWORD)
@@ -20,8 +20,8 @@ import json
 # Example : 
 #    DB = MySQLDatabase('jupyterhub_model', host = "54.0.0.99" , user='jupyterhub_user', passwd="Jupyter#ub_!")
 
-db_creds = json.load(open('db_creds.json', 'r'))
-DB = PostgresqlDatabase(**db_creds)
+#db_creds = json.load(open('db_creds.json', 'r'))
+#DB = PostgresqlDatabase(**db_creds)
 
 
 class BaseModel(Model):
