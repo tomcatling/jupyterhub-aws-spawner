@@ -400,11 +400,11 @@ class InstanceSpawner(Spawner):
         client.create_stack(
                 StackName=stackname,
                 TemplateURL=SERVER_TEMPLATE_URL,
-                Parameters={
+                Parameters=[
                     {"ParameterKey": "User", "ParameterValue": str(self.user.name)},
                     {"ParameterKey": "KeyName", "ParameterValue": str(SERVER_KEY_NAME)},
                     {"ParameterKey": "ParentStack", "ParameterValue": str(PARENT_STACK)},
-                },
+                ],
         )
 
         waiter = client.get_waiter('stack_create_complete')
