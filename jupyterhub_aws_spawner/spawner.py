@@ -42,25 +42,6 @@ class VolumeNotFound(ResourceNotFound):
     print('Volume not found in database')
     pass
 
-SERVER_PARAMS =   {
-  "JUPYTER_MANAGER_IP": "", 
-  "MANAGER_IP_ADDRESS": "", 
-  "SERVER_USERNAME": "", 
-  "JUPYTER_CLUSTER": "", 
-  "WORKER_USERNAME": "", 
-  "REGION": "eu-west-2", 
-  "SUBNET_ID": "", 
-  "WORKER_EBS_SIZE": , 
-  "WORKER_SERVER_OWNER": "", 
-  "AVAILABILITY_ZONE": " {a,b,c}", 
-  "WORKER_SERVER_NAME": "", 
-  "USER_HOME_EBS_SIZE": , 
-  "KEY_NAME": "jupyter_key.pem", 
-  "WORKER_AMI": "", 
-  "WORKER_SECURITY_GROUPS": [""], 
-  "JUPYTER_NOTEBOOK_TIMEOUT": 3600, 
-  "INSTANCE_TYPE": ""
-}
 
 SERVER_TEMPLATE_URL = os.environ['ServerTemplateUrl']
 SERVER_KEY_NAME = os.environ['ServerKeyName']
@@ -72,6 +53,25 @@ NOTEBOOK_SERVER_PORT = 80
 WORKER_USERNAME  = SERVER_PARAMS["WORKER_USERNAME"]
 WORKER_IP = None
 
+SERVER_PARAMS =   {
+  "JUPYTER_MANAGER_IP": "", 
+  "MANAGER_IP_ADDRESS": "", 
+  "SERVER_USERNAME": "admin", 
+  "JUPYTER_CLUSTER": "", 
+  "WORKER_USERNAME": "", 
+  "REGION": "eu-west-2", 
+  "SUBNET_ID": "", 
+  "WORKER_EBS_SIZE": , 
+  "WORKER_SERVER_OWNER": "", 
+  "AVAILABILITY_ZONE": " {a,b,c}", 
+  "WORKER_SERVER_NAME": "", 
+  "USER_HOME_EBS_SIZE": , 
+  "KEY_NAME": SERVER_KEY_NAME, 
+  "WORKER_AMI": "", 
+  "WORKER_SECURITY_GROUPS": [""], 
+  "JUPYTER_NOTEBOOK_TIMEOUT": 3600, 
+  "INSTANCE_TYPE": ""
+}
 
 WORKER_TAGS = [ #These tags are set on every server created by the spawner
     {"Key": "Owner", "Value": SERVER_PARAMS["WORKER_SERVER_OWNER"]},
