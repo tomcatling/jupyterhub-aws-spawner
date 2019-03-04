@@ -43,13 +43,25 @@ class VolumeNotFound(ResourceNotFound):
     print('Volume not found in database')
     pass
 
-
-if os.environ.get('AWS_SPAWNER_TEST'):
-    with open("server_config.json", "r") as f:
-        SERVER_PARAMS = json.load(f) # load local server parameters
-else:
-    with open("/etc/jupyterhub/server_config.json", "r") as f:
-        SERVER_PARAMS = json.load(f) # load local server parameters
+SERVER_PARAMS =   {
+  "JUPYTER_MANAGER_IP": "", 
+  "MANAGER_IP_ADDRESS": "", 
+  "SERVER_USERNAME": "", 
+  "JUPYTER_CLUSTER": "", 
+  "WORKER_USERNAME": "", 
+  "REGION": "", 
+  "SUBNET_ID": "", 
+  "WORKER_EBS_SIZE": , 
+  "WORKER_SERVER_OWNER": "", 
+  "AVAILABILITY_ZONE": " {a,b,c}", 
+  "WORKER_SERVER_NAME": "", 
+  "USER_HOME_EBS_SIZE": , 
+  "KEY_NAME": "jupyter_key.pem", 
+  "WORKER_AMI": "", 
+  "WORKER_SECURITY_GROUPS": [""], 
+  "JUPYTER_NOTEBOOK_TIMEOUT": 3600, 
+  "INSTANCE_TYPE": ""
+}
 
 LONG_RETRY_COUNT = 120
 HUB_MANAGER_IP_ADDRESS = get_local_ip_address()
