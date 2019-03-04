@@ -20,7 +20,6 @@ import asyncio
 #from concurrent.futures import ThreadPoolExecutor
 
 
-
 from jupyterhub_aws_spawner.models import Server, Role
 from jupyterhub_aws_spawner.aws_ressources import AWS_INSTANCE_TYPES
 
@@ -49,7 +48,7 @@ SERVER_PARAMS =   {
   "SERVER_USERNAME": "", 
   "JUPYTER_CLUSTER": "", 
   "WORKER_USERNAME": "", 
-  "REGION": "", 
+  "REGION": "eu-west-2", 
   "SUBNET_ID": "", 
   "WORKER_EBS_SIZE": , 
   "WORKER_SERVER_OWNER": "", 
@@ -63,9 +62,13 @@ SERVER_PARAMS =   {
   "INSTANCE_TYPE": ""
 }
 
+SERVER_TEMPLATE_URL = os.environ['ServerTemplateUrl']
+SERVER_KEY_NAME = os.environ['ServerKeyName']
+PARENT_STACK = os.environ['ParentStack']
+
 LONG_RETRY_COUNT = 120
 HUB_MANAGER_IP_ADDRESS = get_local_ip_address()
-NOTEBOOK_SERVER_PORT = 4444
+NOTEBOOK_SERVER_PORT = 80
 WORKER_USERNAME  = SERVER_PARAMS["WORKER_USERNAME"]
 WORKER_IP = None
 
@@ -196,40 +199,15 @@ class InstanceSpawner(Spawner):
                     #await retry(instance.wait_until_running, max_retries=(LONG_RETRY_COUNT*2)) #this call can occasionally fail, so we wrap it in a retry.
                     #return instance.private_ip_address, NOTEBOOK_SERVER_PORT
                     return None
-                #start_worker_server will handle starting notebook
                 logger.info("start ip and port: %s , %s" % (instance.private_ip_address, NOTEBOOK_SERVER_PORT))
-                await self.start_worker_server(instance, new_server=False)
                 self.ip = self.user.server.ip = instance.private_ip_address
                 self.port = self.user.server.port = NOTEBOOK_SERVER_PORT
             elif instance.state["Name"] in ["stopped", "stopping", "pending", "shutting-down"]:
-                #For case that instance is stopped, the attributes are modified
-                if instance.state["Name"] == "stopped":
-                    self.log.debug('Selected instance type %s for user %s' % (str(self.user_options['INSTANCE_TYPE']), self.user.name))
-                    if self.user_options['INSTANCE_TYPE'] in AWS_INSTANCE_TYPES:
-                        try:
-                            await retry(instance.modify_attribute, Attribute='instanceType', Value = self.user_options['INSTANCE_TYPE'])
-                        except:
-                            self.log.debug("Instance type for user %s could not be changed." % self.user.name)
-                    else:
-                        self.log.debug("Instance type for user %s could not recognized." % self.user.name)
-                    
-                #Server needs to be booted, do so.
-                self.log.info("Starting user %s instance " % self.user.name)
-                await retry(instance.start, max_retries=LONG_RETRY_COUNT)
-                #await retry(instance.start)
-                # blocking calls should be wrapped in a Future
-                await retry(instance.wait_until_running) #this call can occasionally fail, so we wrap it in a retry.
-                self.aws_instance = os.environ['AWS_SPAWNER_WORKER_IP'] = instance.private_ip_address
-                await self.start_worker_server(instance, new_server=False)
-                self.log.debug("%s , %s" % (instance.private_ip_address, NOTEBOOK_SERVER_PORT))
-                # a longer sleep duration reduces the chance of a 503 or infinite redirect error (which a user can
-                # resolve with a page refresh). 10s seems to be a good inflection point of behavior
-                await asyncio.sleep(10)
-                self.ip = self.user.server.ip = instance.private_ip_address
-                self.port = self.user.server.port = NOTEBOOK_SERVER_PORT
+                # we should tear down the cfn stack here
+                pass
             elif instance.state["Name"] == "terminated":
                 # If the server is terminated ServerNotFound is raised. This leads to the try
-                self.log.debug('Instance terminated for user %s. Creating new one and try to attach old volume.' % self.user.name)
+                self.log.debug('Instance terminated for user %s. Creating new one.' % self.user.name)
                 raise ServerNotFound
             else:
                 # if instance is in pending, shutting-down, or rebooting state
@@ -237,14 +215,8 @@ class InstanceSpawner(Spawner):
         except (ServerNotFound, Server.DoesNotExist) as e:
             self.log.debug('Server not found raised for %s' % self.user.name)
 
-            try:
-                self.user.volume = await self.get_volume() #cannot be a thread pool...
-            except (VolumeNotFound, Server.DoesNotExist) as e:
-                self.user.volume = None
-                self.log.debug('Volume not found raised for %s' % self.user.name)
-
                         
-            self.log.info("\nCreate new server for user %s with volume %s\n" % (self.user.name, self.user.volume))
+            self.log.info("\nCreate new server for user %s \n" % (self.user.name))
             instance = self.instance =  await self.create_new_instance()
             os.environ['AWS_SPAWNER_WORKER_IP'] = instance.private_ip_address
             await self.start_worker_server(instance, new_server=True)
@@ -417,210 +389,39 @@ class InstanceSpawner(Spawner):
                 raise ServerNotFound
             raise e
             
-    async def get_volume(self):
-        """ This returns a boto volume resource for the case no volumewas found. 
-        If boto can't find the volume or if no entry for instance in database,
-            it raises VolumeNotFound error and removes database entry if appropriate """
-        self.log.debug("function get_resource for user %s" % self.user.name)
-        server = Server.get_server(self.user.name)
-        resource = await retry(boto3.resource, "ec2", region_name=SERVER_PARAMS["REGION"])
-        try:
-            ret = await retry(resource.Volume, server.ebs_volume_id)
-            self.log.debug("return for get_volume for user %s: %s" % (self.user.name, ret))
-            # boto3.Volume is lazily loaded. Force with .load()
-            await retry(ret.load)
-            if ret.meta.data is None:
-                Server.remove_server(server.server_id)
-                self.log.info("\nVolume DNE for user %s\n" % self.user.name)
-                raise VolumeNotFound
-            return ret
-        except ClientError as e:
-            self.log.error("get_instance client error: %s" % e)
-            if "InvalidInstanceID.NotFound" not in str(e):
-                self.log.error("Couldn't find volume for user '%s'" % self.user.name)
-                Server.remove_server(server.server_id)
-                raise VolumeNotFound
-            raise e
-            
-        
-    
-    async def start_worker_server(self, instance, new_server=False):
-        """ Runs remote commands on worker server to mount user EBS and connect to Jupyterhub. If new_server=True,
-            also create filesystem on newly created user EBS"""
-        logger.info("function start_worker_server for user %s" % self.user.name)
-        # redundant variable set for get_args()
-        self.ip = self.user.server.ip = instance.private_ip_address
-        self.port = self.user.server.port = NOTEBOOK_SERVER_PORT
-        # self.user.server.port = NOTEBOOK_SERVER_PORT
-        try:
-            # Wait for server to finish booting...
-            wait_result = await self.wait_until_SSHable(instance.private_ip_address,max_retries=LONG_RETRY_COUNT)
-            # If first time server then setup the user name
-            if new_server:
-                await self.setup_user(instance.private_ip_address)
-            #start notebook
-            self.log.error("\n\n\n\nabout to check if notebook is running before launching\n\n\n\n")
-            notebook_running = await self.is_notebook_running(instance.private_ip_address)
-            if not notebook_running:
-                await self.remote_notebook_start(instance)
-        except RemoteCmdExecutionError:
-            # terminate instance and create a new one
-            raise web.HTTPError(500, "Instance unreachable")
-
-    async def setup_user(self, privat_ip):
-        """ setup_user_home  and prepare s3"""
-
-        if self.user.name == WORKER_USERNAME:
-            pass
-        else:
-            if SERVER_PARAMS["USER_HOME_EBS_SIZE"] > 0:
-                with settings(**FABRIC_DEFAULTS, host_string=privat_ip):
-                    await sudo("mkfs.xfs /dev/%s" %("xvdf") , user="root",  pty=False)
-                    await sudo("mkdir /jupyteruser", user="root",  pty=False)
-                    await sudo("echo /dev/%s /jupyteruser xfs defaults 1 1 >> /etc/fstab" %("xvdf") , user="root",  pty=False)
-                    await sudo("mount -a" , user="root",  pty=False)
-            with settings(**FABRIC_DEFAULTS, host_string=privat_ip):
-                await sudo("mkdir -p /jupyteruser" , user="root",  pty=False)
-                await sudo("useradd -d /home/%s %s -s /bin/bash  &>/dev/null" % (self.user.name,self.user.name) , user="root",  pty=False)
-                await sudo("cp -R /home/%s /jupyteruser/%s" % (WORKER_USERNAME,self.user.name), user="root",  pty=False)
-                await sudo("ln -s /jupyteruser/%s /home/%s" % (self.user.name,self.user.name), user="root",  pty=False)
-                await sudo("chown -R %s /home/%s /jupyteruser/%s" %(self.user.name,self.user.name,self.user.name), user="root",  pty=False)
-#                await sudo("chown -R %s.%s /home/%s /jupyteruser/%s" %(self.user.name,self.user.name,self.user.name,self.user.name), user="root",  pty=False)
-                await sudo("echo \" %s ALL=(ALL) NOPASSWD:ALL \" > /etc/sudoers.d/%s " % (self.user.name,self.user.name), user="root",  pty=False)
-                # uncomment the line below to setup a default password for the user.
-                #await sudo('echo -e "%s\n%s" | passwd %s' % (self.user.name,self.user.name,self.user.name), pty=False)
-
-        return True
-#"echo jupyterhub-bucket:/freelancer/%s /jupyteruser/s3 fuse.s3fs _netdev,iam_role=auto,use_cache=/tmp 0 0 >> /etc/fstab"
-    def user_env(self, env): 
-        """Augment environment of spawned process with user specific env variables.""" 
-        import pwd 
-        # set HOME and SHELL for the Jupyter process 
-        env['HOME'] = '/home/' + self.user.name
-        env['SHELL'] = '/bin/bash'
-        return env 
-
- 
-    def get_env(self):
-        """Get the complete set of environment variables to be set in the spawned process."""
-        env = super().get_env()
-        env = self.user_env(env)
-        return env
-
-    
-    async def remote_notebook_start(self, instance):
-        """ Do notebook start command on the remote server."""
-        # Setup environments
-        env = self.get_env()
-        lenv=''
-        for key in env:
-            lenv = lenv + key + "=" + env[key] + " "
-        # End setup environment
-        self.log.debug("function remote_server_start %s" % self.user.name)
-        worker_ip_address_string = instance.private_ip_address
-        start_notebook_cmd = self.cmd + self.get_args()
-        start_notebook_cmd = " ".join(start_notebook_cmd)
-        self.log.info("Starting user %s jupyterhub" % self.user.name)
-        with settings(user = self.user.name, key_filename = FABRIC_DEFAULTS["key_filename"],  host_string=worker_ip_address_string):
-             await sudo("%s %s --user=%s --notebook-dir=/ --allow-root > /tmp/jupyter.log 2>&1 &" % (lenv, start_notebook_cmd,self.user.name),  pty=False)
-            
-        self.log.debug("Just started the notebook for user %s with following command, waiting." % self.user.name)
-        self.log.debug("%s %s --user=%s --notebook-dir=/ --allow-root > /tmp/jupyter.log 2>&1 &" % (lenv, start_notebook_cmd,self.user.name))
-        try:
-            self.user.settings[self.user.name] = instance.public_ip_address
-        except:
-            self.user.settings[self.user.name] = ""
-        # self.notebook_should_be_running = True
-        await self.is_notebook_running(worker_ip_address_string, attempts=30)
         
     async def create_new_instance(self):
         """ Creates and boots a new server to host the worker instance."""
         self.log.debug("function create_new_instance %s" % self.user.name)
-        ec2 = boto3.client("ec2", region_name=SERVER_PARAMS["REGION"])
-        resource = boto3.resource("ec2", region_name=SERVER_PARAMS["REGION"])
-        BDM = []
-        boot_drive = {'DeviceName': '/dev/sda1',  # this is to be the boot drive
-                      'Ebs': {'VolumeSize': SERVER_PARAMS["WORKER_EBS_SIZE"],  # size in gigabytes
-                              'DeleteOnTermination': True,
-                              'VolumeType': 'gp2',  # This means General Purpose SSD
-                              # 'Iops': 1000 }  # i/o speed for storage, default is 100, more is faster
-                              }
-                     }
-        BDM = [boot_drive]  
-        # get user volume
-        volume_id = await self.select_volume()
-        # create new instance
-        reservation = await retry(
-                ec2.run_instances,
-                ImageId=SERVER_PARAMS["WORKER_AMI"],
-                MinCount=1,
-                MaxCount=1,
-                KeyName=SERVER_PARAMS["KEY_NAME"],
-                InstanceType=self.user_options['INSTANCE_TYPE'],
-                SubnetId=SERVER_PARAMS["SUBNET_ID"],
-                SecurityGroupIds=SERVER_PARAMS["WORKER_SECURITY_GROUPS"],
-                BlockDeviceMappings=BDM,
+
+        stackname = f'{self.user.name}-server'
+
+        client = boto3.client("cloudformation")
+        client.create_stack(
+                StackName=stackname,
+                TemplateURL=SERVER_TEMPLATE_URL,
+                Parameters={
+                    {"ParameterKey": "User", "ParameterValue": str(self.user.name)},
+                    {"ParameterKey": "KeyName", "ParameterValue": str(SERVER_KEY_NAME)},
+                    {"ParameterKey": "ParentStack", "ParameterValue": str(PARENT_STACK)},
+                },
         )
-        self.log.debug(reservation)
-        try:
-            instance_id = reservation["Instances"][0]["InstanceId"]
-        except TypeError as e:
-            raise Exception('AWS sends weirdly formatted JSON. Please try again...')
-            
-        instance = await retry(resource.Instance, instance_id)
-        #if an old volume is restored from a terminated instance, the user has to be updated, e.g. delted and newly saved
-        # TODO: Support multiple volumes
-        if self.user.volume:
-            server = Server.get_server(self.user.name)
-            Server.remove_server(server.server_id)
-        Server.new_server(instance_id, self.user.name, volume_id)
-        await retry(instance.wait_until_exists)
-        # add server tags; tags cannot be added until server exists
-        await retry(instance.create_tags, Tags=WORKER_TAGS)
-        await retry(instance.create_tags, Tags=[{"Key": "User", "Value": self.user.name}])
-        await retry(instance.create_tags, Tags=[{"Key": "Name", "Value": SERVER_PARAMS["WORKER_SERVER_NAME"] + '_' + self.user.name}])
 
-        # start server
-        # blocking calls should be wrapped in a Future
-        await retry(instance.wait_until_running)
-        # Attach persistent EBS
-        await retry(instance.attach_volume, 
-                    Device='/dev/sdf', 
-                    VolumeId = volume_id, 
-                    InstanceId = instance_id)
+        waiter = client.get_waiter('stack_create_complete')
+        waiter.wait(StackName=stackname)
+
+        response = client.describe_stack_resources(StackName=stackname)
+        instances = [i for i in response['StackResources'] if i['ResourceType']=='AWS::EC2::Instance']
+
+        instance_id = instances[0]['PhysicalResourceId']
+
+        ec2 = boto3.resource("ec2", region_name=SERVER_PARAMS["REGION"])
+        
+        instance = await retry(ec2.Instance, instance_id)
+
         return instance
-    
-    async def select_volume(self):
-        '''Handles volume selection'''
-        ec2_vol = boto3.client("ec2", region_name=SERVER_PARAMS["REGION"])
-        resource_vol = boto3.resource("ec2", region_name=SERVER_PARAMS["REGION"])
-         # Default: set if user had an old volume in db
-        if self.user.volume:
-            volume_id = self.user.volume.id
-        # if no volume found in db we create a new one, attach an old one or create new from snapshot
-        elif self.user_options['EBS_VOL_ID']:
-            volume_id = self.user_options['EBS_VOL_ID']
-        elif self.user_options['EBS_VOL_SIZE'] > 0:
-            volume = await retry(ec2_vol.create_volume, AvailabilityZone = SERVER_PARAMS["REGION"]+'b', 
-                                       Size = self.user_options['EBS_VOL_SIZE'], 
-                                       VolumeType = 'gp2')
-            volume_id = volume['VolumeId']
-            await retry(resource_vol.create_tags, Resources=[volume_id], Tags=[{"Key": "Name", "Value": 'jhub_worker_volume_' + self.user.name}])
-        elif self.user_options['EBS_SNAP_ID']:
-            volume = await retry(ec2_vol.create_volume, AvailabilityZone = SERVER_PARAMS["REGION"]+'b', 
-                                       Size = self.user_options['EBS_VOL_SIZE'], 
-                                       SnapshotId=self.user_options['EBS_SNAP_ID'],
-                                       VolumeType = 'gp2')
-            volume_id = volume['VolumeId']
-            await retry(resource_vol.create_tags, Resources=[volume_id], Tags=[{"Key": "Name", "Value": 'jhub_worker_volume_' + self.user.name}])
-        else:
-            raise Exception('No EBS volume-id or volume size provided.')
-        
-        return volume_id
 
-        
-    
-    
+
     def options_from_form(self, formdata):
         '''
         Parses arguments from the options form to pass to the spawner.
