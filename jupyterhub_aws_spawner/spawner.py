@@ -396,7 +396,7 @@ class InstanceSpawner(Spawner):
 
         stackname = f'{self.user.name}-server'
 
-        client = boto3.client("cloudformation")
+        client = boto3.client("cloudformation", region_name='us-west-2')
         client.create_stack(
                 StackName=stackname,
                 TemplateURL=SERVER_TEMPLATE_URL,
