@@ -1,6 +1,6 @@
 ***
 
-<center>Work in Progress</center>
+<p align="center">Work in Progress</p>
 
 ***
 
