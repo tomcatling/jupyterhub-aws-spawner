@@ -219,7 +219,7 @@ class InstanceSpawner(Spawner):
             self.log.info("\nCreate new server for user %s \n" % (self.user.name))
 
             self.create_stack()
-            instance = self.instance =  await self.get_new_instance
+            instance = self.instance =  await self.get_new_instance()
 
 
             os.environ['AWS_SPAWNER_WORKER_IP'] = instance.private_ip_address
