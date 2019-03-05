@@ -82,8 +82,8 @@ WORKER_TAGS = [ #These tags are set on every server created by the spawner
 #thread_pool = ThreadPoolExecutor(100)
 
 #Logging settings
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
+#logger = logging.getLogger(__name__)
+#logging.basicConfig(level=logging.INFO)
 
 
 #Global Fabric config
@@ -219,6 +219,7 @@ class InstanceSpawner(Spawner):
             self.log.info("\nCreate new server for user %s \n" % (self.user.name))
 
             instance = self.instance =  await self.create_new_instance()
+            self.log.info("Instance created successfully.")
 
             os.environ['AWS_SPAWNER_WORKER_IP'] = instance.private_ip_address
             # self.notebook_should_be_running = False
@@ -402,16 +403,17 @@ class InstanceSpawner(Spawner):
                 ],
         )
 
+        self.log.info("Waiting for stack creation to finish...")
         waiter = client.get_waiter('stack_create_complete')
         await retry(waiter.wait,StackName=stackname)
 
+        self.log.info("Getting instance information...")
         response = client.describe_stack_resources(StackName=stackname)
         instances = [i for i in response['StackResources'] if i['ResourceType']=='AWS::EC2::Instance']
 
         instance_id = instances[0]['PhysicalResourceId']
 
         ec2 = boto3.resource("ec2", region_name=SERVER_PARAMS["REGION"])
-        
         instance = await retry(ec2.Instance, instance_id)
 
         return instance
