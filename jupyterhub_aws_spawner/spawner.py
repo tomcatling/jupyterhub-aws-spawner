@@ -217,7 +217,11 @@ class InstanceSpawner(Spawner):
 
                         
             self.log.info("\nCreate new server for user %s \n" % (self.user.name))
+
+            await self.create_stack()
+            await asyncio.sleep(120)
             instance = self.instance =  await self.create_new_instance()
+            
             os.environ['AWS_SPAWNER_WORKER_IP'] = instance.private_ip_address
             # self.notebook_should_be_running = False
             self.log.debug("%s , %s" % (instance.private_ip_address, NOTEBOOK_SERVER_PORT))
@@ -387,11 +391,10 @@ class InstanceSpawner(Spawner):
                 Server.remove_server(server.server_id)
                 raise ServerNotFound
             raise e
-            
-        
-    async def create_new_instance(self):
+    
+    async def create_stack(self):
         """ Creates and boots a new server to host the worker instance."""
-        self.log.debug("function create_new_instance %s" % self.user.name)
+        self.log.debug("function stack %s" % self.user.name)
 
         stackname = f'{self.user.name}-server'
 
@@ -405,6 +408,12 @@ class InstanceSpawner(Spawner):
                     {"ParameterKey": "ParentStack", "ParameterValue": str(PARENT_STACK)},
                 ],
         )
+        
+    async def create_new_instance(self):
+        """ Creates and boots a new server to host the worker instance."""
+        self.log.debug("function create_new_instance %s" % self.user.name)
+
+        stackname = f'{self.user.name}-server'
 
         waiter = client.get_waiter('stack_create_complete')
         waiter.wait(StackName=stackname)
