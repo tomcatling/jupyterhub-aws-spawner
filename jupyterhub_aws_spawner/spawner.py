@@ -217,7 +217,11 @@ class InstanceSpawner(Spawner):
 
                         
             self.log.info("\nCreate new server for user %s \n" % (self.user.name))
-            instance = self.instance =  await self.create_new_instance()
+
+            self.create_stack()
+            instance = self.instance =  await self.get_new_instance
+
+
             os.environ['AWS_SPAWNER_WORKER_IP'] = instance.private_ip_address
             # self.notebook_should_be_running = False
             self.log.debug("%s , %s" % (instance.private_ip_address, NOTEBOOK_SERVER_PORT))
@@ -226,19 +230,6 @@ class InstanceSpawner(Spawner):
             self.ip = self.user.server.ip
             self.port = self.user.server.port = NOTEBOOK_SERVER_PORT
             
-        
-        ec2 = boto3.client("ec2", region_name=SERVER_PARAMS["REGION"])
-        #update 
-        # assign iam role to server
-        role = Role.get_role(self.user.name)
-        self.log.debug('Trying to attach role %s to instance %s for user %s'
-                       % (role.role_arn, self.instance.instance_id ,self.user.name))
-        response = await retry(ec2.associate_iam_instance_profile, 
-                    IamInstanceProfile={'Arn': role.role_arn , 'Name': role.role_name}, 
-                    InstanceId=self.instance.instance_id,
-                    max_retries=10)
-        self.log.debug('AWS response for tried rolle attachment for user %s: %s' 
-                       % (self.user.name, response))
         return instance.private_ip_address, NOTEBOOK_SERVER_PORT
         
         
@@ -389,7 +380,7 @@ class InstanceSpawner(Spawner):
             raise e
             
         
-    async def create_new_instance(self):
+    async def create_stack(self):
         """ Creates and boots a new server to host the worker instance."""
         self.log.debug("function create_new_instance %s" % self.user.name)
 
@@ -406,8 +397,13 @@ class InstanceSpawner(Spawner):
                 ],
         )
 
+    async def get_new_instance(self)
+        self.log.debug("function create_new_instance %s" % self.user.name)
+
+        stackname = f'{self.user.name}-server'
+
         waiter = client.get_waiter('stack_create_complete')
-        waiter.wait(StackName=stackname)
+        await retry(waiter.wait,StackName=stackname)
 
         response = client.describe_stack_resources(StackName=stackname)
         instances = [i for i in response['StackResources'] if i['ResourceType']=='AWS::EC2::Instance']
