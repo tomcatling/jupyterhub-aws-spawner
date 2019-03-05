@@ -239,9 +239,19 @@ class InstanceSpawner(Spawner):
         """ When user session stops, stop user instance """
         self.log.debug("function stop")
         self.log.info("Stopping user %s instance " % self.user.name)
+        
+        stackname = f'{self.user.name}-server'
+
+        client = boto3.client("cloudformation", region_name='eu-west-2')
+                
         try:
-            instance = await self.get_instance()  
-            await retry(instance.stop)
+            response = client.delete_stack(
+                StackName=stackname,
+            )
+            
+            waiter = client.get_waiter('stack_delete_complete')
+            await retry(waiter.wait,StackName=stackname)
+            
             return 'Notebook stopped'
             # self.notebook_should_be_running = False
         except Server.DoesNotExist:
