@@ -20,7 +20,7 @@ import asyncio
 #from concurrent.futures import ThreadPoolExecutor
 
 
-from jupyterhub_aws_spawner.models import Server, Role
+from jupyterhub_aws_spawner.models import Server
 from jupyterhub_aws_spawner.aws_ressources import AWS_INSTANCE_TYPES
 
 
@@ -266,10 +266,7 @@ class InstanceSpawner(Spawner):
         try:
             instance = await self.get_instance()  
             await retry(instance.terminate)
-            if delete_volume:
-                server = Server.get_server(self.user.name)  
-                ec2 = boto3.client("ec2", region_name=SERVER_PARAMS["REGION"])
-                await retry(ec2.delete_volume, VolumeId = server.ebs_volume_id, max_retries=40)
+
             return 'Terminated'
             # self.notebook_should_be_running = False
         except Server.DoesNotExist:
@@ -428,14 +425,9 @@ class InstanceSpawner(Spawner):
         options = {}
         self.log.debug(str(formdata))
         inst_type = formdata['instance_type'][0].strip()
-        ebs_vol_id = formdata['ebs_vol_id'][0].strip()
-        ebs_vol_size = formdata['ebs_vol_size'][0].strip()
-        ebs_snap_id = formdata['ebs_snap_id'][0].strip()
-        
+
         options['INSTANCE_TYPE'] = inst_type if inst_type else ''
-        options['EBS_VOL_ID'] = ebs_vol_id if ebs_vol_id else ''
-        options['EBS_SNAP_ID'] = ebs_snap_id if ebs_snap_id else ''
-        options['EBS_VOL_SIZE'] = int(ebs_vol_size) if ebs_vol_size else 0
+
         self.log.debug(str(options))
         return options
     
@@ -450,5 +442,3 @@ class InstanceSpawner(Spawner):
         dirname = os.path.dirname(__file__)
         filename = os.path.join(dirname, 'options_form.html')
         return open(filename,'r').read()
-
-    

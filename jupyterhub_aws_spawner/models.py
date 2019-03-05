@@ -52,17 +52,6 @@ class Server(BaseModel):
     def remove_server(cls, server_id):
         cls.delete().where(cls.server_id == server_id).execute()
         
-class Role(BaseModel):
-    user_id = CharField(unique=True)
-    role_name = CharField(unique=True)
-    role_arn = CharField(unique=True)
-    s3_bucket = CharField(unique=True)
-
-    @classmethod
-    def get_role(cls, user_id):
-        return cls.get(user_id=user_id)
-
 
 DB.connect()
 Server.create_table(True)
-Role.create_table(True)
