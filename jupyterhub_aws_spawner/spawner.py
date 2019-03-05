@@ -397,7 +397,7 @@ class InstanceSpawner(Spawner):
                 ],
         )
 
-    async def get_new_instance(self)
+    async def get_new_instance(self):
         self.log.debug("function create_new_instance %s" % self.user.name)
 
         stackname = f'{self.user.name}-server'
