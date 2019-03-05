@@ -219,7 +219,6 @@ class InstanceSpawner(Spawner):
             self.log.info("\nCreate new server for user %s \n" % (self.user.name))
             instance = self.instance =  await self.create_new_instance()
             os.environ['AWS_SPAWNER_WORKER_IP'] = instance.private_ip_address
-            await self.start_worker_server(instance, new_server=True)
             # self.notebook_should_be_running = False
             self.log.debug("%s , %s" % (instance.private_ip_address, NOTEBOOK_SERVER_PORT))
             # to reduce chance of 503 or infinite redirect
